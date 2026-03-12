@@ -32,7 +32,7 @@ GREEK_IMAGE_DIR = Path(__file__).parent / "images"
 GREEK_IMAGE_DIR.mkdir(exist_ok=True)
 
 
-def add_chromatic_aberration(image: Image.Image, intensity: int = None, scale: int = None) -> Image.Image:
+def add_chromatic_aberration(image: Image.Image, intensity: int = None) -> Image.Image:
     """色散效果"""
     if intensity is None:
         intensity = plugin_config.osugreek_chromatic_intensity
@@ -188,7 +188,6 @@ async def handle_osugreek(bot: Bot, event: MessageEvent):
     
     greek_name = ""
     chromatic_intensity = None
-    chromatic_scale = None
     glitch_intensity = None
     
     if len(command_parts) > 1:
@@ -239,8 +238,7 @@ async def handle_osugreek(bot: Bot, event: MessageEvent):
         # 应用色散效果
         chromatic_img = add_chromatic_aberration(
             original_img, 
-            intensity=chromatic_intensity,
-            scale=chromatic_scale
+            intensity=chromatic_intensity
         )
         
         # 应用故障效果（如果指定了强度）
