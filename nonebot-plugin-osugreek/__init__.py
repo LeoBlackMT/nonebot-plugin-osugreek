@@ -9,7 +9,7 @@ __plugin_meta__ = PluginMetadata(
     usage="/osugreek <希腊字母> 或 /希腊字母 <希腊字母>",
     type="application",
     homepage="https://github.com/YakumoZn/nonebot-plugin-osugreek",
-    supported_adapters={"~onebot.v11"},
+    supported_adapters={"~onebot.v11", "~qq"},
     config=Config,  
     extra={"author": "YakumoZn"}
 )

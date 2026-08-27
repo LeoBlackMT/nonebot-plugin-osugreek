@@ -1,5 +1,12 @@
 from nonebot import get_plugin_config, require, on_command
-from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
+from nonebot.adapters import Bot, Event
+from nonebot.adapters.onebot.v11 import Bot as OneBot, MessageSegment
+try:
+    from nonebot.adapters.qq import Bot as QQBot
+    from nonebot.adapters.qq import MessageSegment as QQMessageSegment
+except ImportError:
+    QQBot = None
+    QQMessageSegment = None
 from PIL import Image, ImageChops, ImageFilter
 import aiohttp
 import asyncio
@@ -181,8 +188,30 @@ def generate_temp_filename() -> str:
     return f"processed_{timestamp}_{random_suffix}.png"
 
 
+# 判断是否为 QQ 官方适配器
+def _is_qq(bot: Bot) -> bool:
+    return QQBot is not None and isinstance(bot, QQBot)
+
+
+def _image_url_from_message(message) -> str | None:
+    """从消息段中提取第一张图片的 url（OneBot 与 QQ 消息段结构兼容）。"""
+    for seg in message:
+        if getattr(seg, "type", None) == "image":
+            return getattr(seg, "data", {}).get("url")
+    return None
+
+
+async def _send_image(bot: Bot, event: Event, image_path: str) -> None:
+    """按适配器发送本地图片：OneBot 用 file:// 段，QQ 用 bytes 上传。"""
+    if _is_qq(bot):
+        with open(image_path, "rb") as f:
+            await bot.send(event, QQMessageSegment.file_image(f.read()))
+    else:
+        await bot.send(event, MessageSegment.image(f"file:///{image_path}"))
+
+
 @osugreek.handle()
-async def handle_osugreek(bot: Bot, event: MessageEvent):
+async def handle_osugreek(bot: Bot, event: Event):
     msg_text = event.get_plaintext().strip()
     command_parts = msg_text.split()
     
@@ -208,22 +237,23 @@ async def handle_osugreek(bot: Bot, event: MessageEvent):
         available.sort()
         await bot.send(event, f"可用的希腊字母名称有: {', '.join(available)}")
         return
-    image_msg = None
-    for seg in event.message:
-        if seg.type == "image":
-            image_msg = seg
-            break
-    if not image_msg and hasattr(event, 'reply') and event.reply:
-        for seg in event.reply.message:
-            if seg.type == "image":
-                image_msg = seg
-                break
-    if not image_msg:
+    image_url = _image_url_from_message(event.message)
+    if image_url is None and getattr(event, "reply", None) is not None:
+        if _is_qq(bot):
+            reply = getattr(event, "reply", None) or None
+            if reply is not None:
+                for att in getattr(reply, "attachments", None) or []:
+                    if getattr(att, "url", None):
+                        image_url = att.url
+                        break
+        else:
+            image_url = _image_url_from_message(event.reply.message)
+    if image_url is None:
         await bot.send(event, "请发送一张图片或回复一张图片")
         return
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(image_msg.data["url"]) as resp:
+            async with session.get(image_url) as resp:
                 if resp.status != 200:
                     await bot.send(event, "图片下载失败")
                     return
@@ -265,7 +295,7 @@ async def handle_osugreek(bot: Bot, event: MessageEvent):
         temp_filename = generate_temp_filename()
         temp_output_path = _get_cache_dir() / temp_filename
         combined.save(temp_output_path, format="PNG")
-        await bot.send(event, MessageSegment.image(f"file:///{temp_output_path.absolute()}"))
+        await _send_image(bot, event, str(temp_output_path.absolute()))
     except Exception as e:
         await bot.send(event, f"图片处理失败: {str(e)}")
         return
